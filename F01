@@ -1,0 +1,103 @@
+
+
+FORM DISPLAY .
+
+  PERFORM INIT_ALV.
+
+"----LAYPUT---------------------------------------------------------
+  GS_LAYOUT-COLWIDTH_OPTIMIZE = 'X'.
+  GS_LAYOUT-BOX_FIELDNAME = 'MARK'.
+
+"----DISPLAY ALV---------------------------------------------------------
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      I_CALLBACK_PROGRAM       = SY-REPID
+      I_CALLBACK_PF_STATUS_SET = 'STATUS_ALV' "tao nut
+      I_CALLBACK_USER_COMMAND  = 'COMMAND_ALV' " bat su kien
+      IS_LAYOUT                = GS_LAYOUT
+      IT_FIELDCAT              = GT_FIELDCAT
+*     I_SAVE                   = 'X'
+    TABLES
+      T_OUTTAB                 = GT_DATA
+    EXCEPTIONS
+      PROGRAM_ERROR            = 1
+      OTHERS                   = 2.
+  IF SY-SUBRC <> 0.
+* Implement suitable error handling here
+  ENDIF.
+ENDFORM.
+
+FORM INIT_ALV .
+
+  PERFORM F_ADD_FIELDCAT USING 'KONNR'                'Contract No ' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'ZCON'                'Hard copy Contract' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'BANFN'                'PR number' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'BNFPO'                'PR line' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'UDATE_PR'                'Last PR approval date' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'EBELN'                'PO number' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'UDATE_PO'                'Last PO approval date' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'EBELP'                'PO Item line' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'NAME_TEXT'                'PO PIC' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'LFDAT'                'PR delivery date' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'BEDAT'                'PO created on' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'EINDT'                'PO delivery date' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'MATNR'                'material(Maximo code)' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'TXZ01'                'short text' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'MENGE'                'PO Order Quantity' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'MEINS'                'PO Order unit' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'NETPR'                'PO Net order price' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'NETWR'                'PO Net order value' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'NAME1'                'Vendor Name' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'STRAS'                'Vendor Address' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'TELF1'                'Vendor Phone No' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'SMTP_ADDR'                'Vendor email' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'LIFNR'                'Vendor code' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'INCO1'                'Vendor email' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'CPUDT_MKPF'                'Latest GR Date' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'LOEKZ'                'Status' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'BSART'                'PO documnet type' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'KNTTP'                'PO Account assignment category' 'L' 'R' '' 10 '' '' '' ''.
+  PERFORM F_ADD_FIELDCAT USING 'EPSTP'                'Item category' 'L' 'R' '' 10 '' '' '' ''.
+
+ENDFORM.
+
+FORM STATUS_ALV USING P_EXTAB TYPE SLIS_T_EXTAB.
+  SET PF-STATUS 'TOTAL'.
+ENDFORM.
+
+FORM COMMAND_ALV USING P_UCOMM LIKE SY-UCOMM
+                       P_SELFIELD TYPE SLIS_SELFIELD.
+  CASE SY-UCOMM.
+    WHEN 'BACK'.
+      LEAVE LIST-PROCESSING.
+  ENDCASE.
+ENDFORM.
+
+FORM F_ADD_FIELDCAT  USING    IV_FIELDNAME
+                                IV_SELTEXT
+                                IV_DDICTXT
+                                IV_JUST
+                                IV_HOTSPOT
+                                IV_OUTPUTLEN
+                                IV_REF_TABNAME
+                                IV_CFIELDNAME
+                                IV_EDIT
+                                IV_DO_SUM
+                            .
+  GV_COL_POS              = GV_COL_POS + 1.
+  GS_FIELDCAT-FIELDNAME   = IV_FIELDNAME.
+  GS_FIELDCAT-SELTEXT_L   = IV_SELTEXT.            " long key word
+  GS_FIELDCAT-SELTEXT_M   = IV_SELTEXT.            " middle key word
+  GS_FIELDCAT-SELTEXT_S   = IV_SELTEXT.            " short key word
+  GS_FIELDCAT-DDICTXT     = IV_DDICTXT.            "(S)hort (M)iddle (L)ong
+  GS_FIELDCAT-JUST        = IV_JUST.               "(R)ight (L)eft (C)ent.
+  GS_FIELDCAT-HOTSPOT     = IV_HOTSPOT.            "hotspot
+  GS_FIELDCAT-OUTPUTLEN   = IV_OUTPUTLEN.          "Output Length
+  GS_FIELDCAT-COL_POS     = GV_COL_POS.         "position of the column/ vị trí của cột
+  GS_FIELDCAT-REF_TABNAME = IV_REF_TABNAME.        "
+  GS_FIELDCAT-EDIT        = IV_EDIT.               "
+  GS_FIELDCAT-CFIELDNAME  = IV_CFIELDNAME.         "field with currency unit /
+  GS_FIELDCAT-DO_SUM      = IV_DO_SUM.             "SUM UP
+  APPEND GS_FIELDCAT TO GT_FIELDCAT.
+  CLEAR  GS_FIELDCAT.
+ENDFORM.
