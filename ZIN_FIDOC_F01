@@ -1,0 +1,457 @@
+*&---------------------------------------------------------------------*
+*&  Include           ZIN_FIDOC_F01
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*&      Form  GET_DATA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM GET_DATA .
+  DATA : LT_BSEG TYPE TABLE OF BSEG.
+  SELECT
+         BUKRS
+         BELNR
+         GJAHR
+         MONAT
+         BLDAT
+         BUDAT
+         WAERS
+  FROM BKPF
+  INTO CORRESPONDING FIELDS OF TABLE GT_BKPF
+  WHERE BUKRS IN S_BUKRS
+  AND   GJAHR IN S_GJAHR
+  AND   BUDAT IN S_BUDAT.
+  IF GT_BKPF IS NOT INITIAL.
+    SORT GT_BKPF BY BUKRS GJAHR BUDAT.
+    SELECT * FROM BSEG
+    INTO CORRESPONDING FIELDS OF TABLE GT_BSEG
+    FOR ALL ENTRIES IN GT_BKPF
+    WHERE BUKRS = GT_BKPF-BUKRS
+    AND   BELNR = GT_BKPF-BELNR
+    AND   GJAHR = GT_BKPF-GJAHR.
+  ELSE.
+    MESSAGE 'No data selected!' TYPE 'E'.
+  ENDIF.
+  GT_BSEG_TMP[] = GT_BSEG[].
+  DELETE GT_BSEG_TMP WHERE HKONT = '0063520001' OR HKONT = '0051500001'.
+  DELETE GT_BSEG WHERE HKONT NE '0063520001' AND HKONT NE '0051500001'.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  PROCESS_DATA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM PROCESS_DATA .
+  DATA : LT_BSEG     TYPE TABLE OF BSEG,
+         LS_BSEG     TYPE          BSEG,
+         LS_BSEG_TMP TYPE          BSEG,
+         LW_DMBTR    TYPE          WERTV12,
+         LW_IN       TYPE          SY-TABIX.
+  LT_BSEG = GT_BSEG[].
+  SORT LT_BSEG BY BUKRS BELNR GJAHR.
+  DELETE ADJACENT DUPLICATES FROM LT_BSEG COMPARING BUKRS BELNR GJAHR.
+  LOOP AT LT_BSEG INTO LS_BSEG.
+    LOOP AT GT_BSEG_TMP INTO LS_BSEG_TMP WHERE BUKRS = LS_BSEG-BUKRS
+                                         AND   BELNR = LS_BSEG-BELNR
+                                         AND   GJAHR = LS_BSEG-GJAHR.
+      APPEND LS_BSEG_TMP TO GT_BSEG.
+    ENDLOOP.
+  ENDLOOP.
+  LOOP AT GT_BSEG INTO GS_BSEG.
+    CLEAR : GS_DATA.
+    MOVE-CORRESPONDING GS_BSEG TO GS_DATA.
+    READ TABLE GT_BKPF INTO GS_BKPF WITH KEY BUKRS = GS_BSEG-BUKRS
+                                             BELNR = GS_BSEG-BELNR
+                                             GJAHR = GS_BSEG-GJAHR ."BINARY SEARCH.
+    IF SY-SUBRC = 0.
+      GS_DATA-BLDAT =  GS_BKPF-BLDAT.
+      GS_DATA-BUDAT =  GS_BKPF-BUDAT.
+      GS_DATA-MONAT =  GS_BKPF-MONAT.
+      GS_DATA-GJAHR =  GS_BKPF-GJAHR.
+*      GS_DATA-WAERS =  GS_BKPF-WAERS.
+    ENDIF.
+    IF R_EXCEL = 'X'.
+      LW_DMBTR = GS_DATA-PSWBT.
+      CALL FUNCTION 'ZFM_NUM2CHAR'
+        EXPORTING
+          IP_NUM      = GS_DATA-PSWBT
+          IP_CURRENCY = GS_DATA-PSWSL
+*         IP_ZERO     =
+*         IP_DEL_DECIMAL       =
+*         IP_NEGATIVE = 'X'
+*         IP_FORMAT   = 'X'
+        IMPORTING
+*         EP_CHAR     =
+          EP_AMOUNT   = LW_DMBTR
+*     EXCEPTIONS
+*         CANNOT_CONVERT       = 1
+*         OTHERS      = 2
+        .
+      GS_DATA-PSWBT = LW_DMBTR.
+      IF SY-SUBRC <> 0.
+* Implement suitable error handling here
+      ENDIF.
+    ENDIF.
+    APPEND GS_DATA TO GT_DATA.
+  ENDLOOP.
+  SORT GT_DATA BY BUDAT BELNR BUZEI.
+  LOOP AT GT_DATA INTO GS_DATA.
+    LW_IN = SY-TABIX.
+    IF  GS_DATA-BUDAT  NE '00000000'.
+      CONCATENATE GS_DATA-BUDAT+6(2) GS_DATA-BUDAT+4(2) GS_DATA-BUDAT(4) INTO GS_DATA-BUDAT SEPARATED BY '/'.
+    ELSE.
+      CLEAR GS_DATA-BUDAT.
+    ENDIF.
+    IF  GS_DATA-VALUT  NE '00000000'.
+      CONCATENATE GS_DATA-VALUT+6(2) GS_DATA-VALUT+4(2) GS_DATA-VALUT(4) INTO GS_DATA-VALUT SEPARATED BY '/'.
+    ELSE.
+      CLEAR GS_DATA-VALUT.
+    ENDIF.
+    IF  GS_DATA-AUGDT  NE '00000000'.
+      CONCATENATE GS_DATA-AUGDT+6(2) GS_DATA-AUGDT+4(2) GS_DATA-AUGDT(4) INTO GS_DATA-AUGDT SEPARATED BY '/'.
+    ELSE.
+      CLEAR GS_DATA-AUGDT.
+    ENDIF.
+    MODIFY GT_DATA FROM GS_DATA INDEX LW_IN.
+  ENDLOOP.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  DISPLAY_OUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM DISPLAY_OUT .
+  IF R_ALV = 'X'.
+    PERFORM ALV.
+  ELSE.
+    PERFORM EXCEL.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  ALV
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM ALV .
+  PERFORM F_CAT.
+  PERFORM ALV_VIEW.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  EXCEL
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM EXCEL.
+  DATA : LT_HEADER TYPE TABLE OF ZST_FIDOC_HEADER,
+         LS_HEADER TYPE          ZST_FIDOC_HEADER,
+         LW_FR     TYPE          CHAR10,
+         LW_TO     TYPE          CHAR10.
+  "
+  CONCATENATE S_BUDAT-LOW+6(2) S_BUDAT-LOW+4(2) S_BUDAT-LOW(4) INTO LW_FR SEPARATED BY '/'.
+  CONCATENATE S_BUDAT-HIGH+6(2) S_BUDAT-HIGH+4(2) S_BUDAT-HIGH(4) INTO LW_TO SEPARATED BY '/'.
+  IF S_BUDAT-HIGH IS NOT INITIAL .
+    CONCATENATE TEXT-003 LW_FR TEXT-004 LW_TO INTO LS_HEADER-FROM_DATE_TO SEPARATED BY ''.
+  ELSE.
+    CONCATENATE TEXT-003 LW_FR TEXT-004 LW_FR INTO LS_HEADER-FROM_DATE_TO SEPARATED BY ''.
+  ENDIF.
+  "
+  APPEND LS_HEADER TO LT_HEADER.
+  GS_EXCEL-HEAER = LT_HEADER.
+  GS_EXCEL-ITEM  = GT_DATA.
+
+  CALL FUNCTION 'ZXLWB_CALLFORM'
+    EXPORTING
+      IV_FORMNAME        = 'ZWB_FILIST'  "ducnh add 03.09.2019
+      IV_CONTEXT_REF     = GS_EXCEL
+    EXCEPTIONS
+      PROCESS_TERMINATED = 1
+                           OTHERS.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  F_CAT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM F_CAT .
+  DATA: LW_FCAT TYPE SLIS_FIELDCAT_ALV.  " Work area for Field catalog
+  DATA: L_INDEX          TYPE INT4,
+        LC_DDICTXT_01(1) TYPE C VALUE 'L',
+        LC_DDICTXT_02(1) TYPE C VALUE 'R',
+        LC_FLAG(1)       TYPE C VALUE 'X'.
+
+  " 1
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'BUDAT'.
+  LW_FCAT-JUST      = LC_DDICTXT_02.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Posting Date'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 2
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'BUKRS'.
+  LW_FCAT-JUST      = LC_DDICTXT_02.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Company Code'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 3
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'BELNR'.
+  LW_FCAT-JUST      = LC_DDICTXT_02.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Document Number'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 4
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'GJAHR'.
+  LW_FCAT-JUST      = LC_DDICTXT_02.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Fiscal Year'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 5
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'BUZEI'.
+  LW_FCAT-JUST      = LC_DDICTXT_01.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Line item'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 6
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'BSCHL'.
+  LW_FCAT-JUST      = LC_DDICTXT_01.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Posting Key'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 7
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'KOART'.
+  LW_FCAT-JUST      = LC_DDICTXT_01.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Account Type'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 8
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'SHKZG'.
+  LW_FCAT-JUST      = LC_DDICTXT_01.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Debit/Credit Ind.'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 9
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'PSWBT'.
+  LW_FCAT-CFIELDNAME  = 'PSWSL'.
+  LW_FCAT-JUST      = LC_DDICTXT_02.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'General ledger amount'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 10
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'PSWSL'.
+  LW_FCAT-JUST      = LC_DDICTXT_01.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'General ledger currency'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 11
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'VALUT'.
+  LW_FCAT-JUST      = LC_DDICTXT_01.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Value date'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 12
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'ZUONR'.
+  LW_FCAT-JUST      = LC_DDICTXT_01.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Assignment'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 13
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'HKONT'.
+  LW_FCAT-JUST      = LC_DDICTXT_01.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'G/L Account'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 14
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'KUNNR'.
+  LW_FCAT-JUST      = LC_DDICTXT_01.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Customer'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 15
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'LIFNR'.
+  LW_FCAT-JUST      = LC_DDICTXT_01.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Vendor'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 16
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'AUGDT'.
+  LW_FCAT-JUST      = LC_DDICTXT_01.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Clearing date'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 17
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'AUGBL'.
+  LW_FCAT-JUST      = LC_DDICTXT_01.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Clearing Document'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 18
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'PRCTR'.
+  LW_FCAT-JUST      = LC_DDICTXT_01.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Profit Center'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+  " 19
+  L_INDEX = L_INDEX + 1.
+  LW_FCAT-FIELDNAME = 'DMBTR'.
+  LW_FCAT-CFIELDNAME = 'WAERS'.
+  LW_FCAT-JUST      = LC_DDICTXT_02.
+  LW_FCAT-OUTPUTLEN = 10.
+  LW_FCAT-SELTEXT_L = 'Amount in LC'.
+  LW_FCAT-COL_POS   = L_INDEX.
+  APPEND LW_FCAT TO I_FIELDCAT.
+  CLEAR: LW_FCAT.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  ALV_VIEW
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM ALV_VIEW .
+  DATA : C_IT_LAYOUT TYPE SLIS_LAYOUT_ALV.
+  C_IT_LAYOUT-COLWIDTH_OPTIMIZE = 'X'.
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      I_CALLBACK_PROGRAM          = SY-REPID
+      IS_LAYOUT                   = C_IT_LAYOUT
+      IT_FIELDCAT                 = I_FIELDCAT
+      I_CALLBACK_HTML_TOP_OF_PAGE = 'TOP_OF_PAGE_SPLIT'
+      I_DEFAULT                   = ABAP_TRUE
+      I_SAVE                      = ' '
+    TABLES
+      T_OUTTAB                    = GT_DATA.
+ENDFORM.
+FORM TOP_OF_PAGE_SPLIT USING FO_TOP TYPE REF TO CL_DD_DOCUMENT.
+
+  DATA: LI_TAB   TYPE SDYDO_TEXT_TABLE,
+        LO_AREA  TYPE REF TO CL_DD_AREA,
+        LV_TEXT  TYPE SDYDO_TEXT_ELEMENT,
+        LV_DATE1 TYPE CHAR10,
+        LV_GJAHR TYPE CHAR4,
+        LV_DATE2 TYPE CHAR10,
+        LV_TEXT1 TYPE STRING,
+        LV_TEXT2 TYPE STRING,
+        LW_FR    TYPE CHAR10,
+        LW_TO    TYPE CHAR10,
+        LW_STR   TYPE CHAR100.
+  "
+  CONCATENATE S_BUDAT-LOW+6(2) S_BUDAT-LOW+4(2) S_BUDAT-LOW(4) INTO LW_FR SEPARATED BY '/'.
+  CONCATENATE S_BUDAT-HIGH+6(2) S_BUDAT-HIGH+4(2) S_BUDAT-HIGH(4) INTO LW_TO SEPARATED BY '/'.
+  IF S_BUDAT-HIGH IS NOT INITIAL .
+    CONCATENATE TEXT-003 LW_FR TEXT-004 LW_TO INTO LW_STR SEPARATED BY ''.
+  ELSE.
+    CONCATENATE TEXT-003 LW_FR TEXT-004 LW_FR INTO LW_STR SEPARATED BY ''.
+  ENDIF.
+  "
+  TYPES : BEGIN OF TY_TEXT,
+            TEXT TYPE SDYDO_TEXT_ELEMENT,
+          END OF TY_TEXT.
+  DATA: LI_TEXT  TYPE STANDARD TABLE OF TY_TEXT INITIAL SIZE 0.
+  DATA: LW_TEXT1 TYPE TY_TEXT.
+  CONSTANTS :  C_WIDTH TYPE W3_QVALUE VALUE '30%',
+               C_EMPH  TYPE CHAR50    VALUE 'NORMAL',
+               LC_FLAG TYPE CHAR1     VALUE 'X'.
+
+*Creating header Area
+  CALL METHOD FO_TOP->INITIALIZE_DOCUMENT.
+  CALL METHOD FO_TOP->VERTICAL_SPLIT
+    EXPORTING
+      SPLIT_AREA  = FO_TOP
+      SPLIT_WIDTH = C_WIDTH
+    IMPORTING
+      RIGHT_AREA  = LO_AREA.
+  LW_TEXT1-TEXT = 'FOREIGN EXCHANGE RATE DIFFERENCE DATA REPORT'.
+  APPEND LW_TEXT1 TO LI_TEXT.
+  CLEAR LW_TEXT1.
+
+  LI_TAB[] = LI_TEXT[].
+
+  CALL METHOD LO_AREA->ADD_TEXT
+    EXPORTING
+      TEXT_TABLE   = LI_TAB
+      FIX_LINES    = ABAP_TRUE
+      SAP_FONTSIZE = CL_DD_DOCUMENT=>LARGE
+      SAP_EMPHASIS = CL_DD_DOCUMENT=>STRONG
+      SAP_STYLE    = CL_DD_DOCUMENT=>HEADING.
+  LV_TEXT = LW_STR.
+  CALL METHOD LO_AREA->ADD_GAP
+    EXPORTING
+      WIDTH = 42.
+  CALL METHOD LO_AREA->ADD_TEXT
+    EXPORTING
+      TEXT         = LV_TEXT
+      SAP_EMPHASIS = C_EMPH.
+
+ENDFORM.
